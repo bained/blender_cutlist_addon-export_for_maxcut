@@ -1,0 +1,28 @@
+# Build output — release archives go to GitHub Releases, not to the repository
+dist/
+*.zip
+
+# Local development scratch: original script, TODO notes, one-off probes/demos.
+# Keep these locally, out of the public repository.
+.dev/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Blender
+*.blend1
+*.blend2
+*.blend@
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

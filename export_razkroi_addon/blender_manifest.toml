@@ -1,0 +1,23 @@
+schema_version = "1.0.0"
+
+id = "export_razkroi_addon"
+version = "1.0.0"
+name = "Cutlist Export (MaxCut)"
+tagline = "Export a MaxCut cutting list from the selected boards"
+maintainer = "nedik"
+type = "add-on"
+website = "https://github.com/bained/blender_cutlist_addon-export_for_maxcut"
+copyright = [
+  "2026 nedik",
+]
+
+# 4.0 is the verified minimum (the manifest itself is only read by 4.2+, which
+# falls back to bl_info below that version).
+blender_version_min = "4.0.0"
+license = [
+  "SPDX:GPL-2.0-or-later",
+]
+
+[permissions]
+files = "Writes the cutting list text file to disk"
+
