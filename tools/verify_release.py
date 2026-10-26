@@ -11,15 +11,27 @@ import importlib
 import os
 import sys
 import tempfile
+import tomllib
 import urllib.request
 
 import bpy
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-INSTALLED = "bl_ext.user_default.export_razkroi_addon"
-VERSION = "1.0.0"
-RELEASE_URL = ("https://github.com/bained/blender_cutlist_addon-export_for_maxcut"
-               f"/releases/latest/download/export_razkroi_addon-{VERSION}.zip")
+PACKAGE = "export_razkroi_addon"
+INSTALLED = f"bl_ext.user_default.{PACKAGE}"
+# Test fixture material - non-ASCII on purpose, and not any real board name.
+TEST_MATERIAL = "Тестов материал W1100"
+
+
+def addon_version():
+    """Version from blender_manifest.toml, so this script never goes stale."""
+    with open(os.path.join(REPO, PACKAGE, "blender_manifest.toml"), encoding="utf-8") as fh:
+        return tomllib.loads(fh.read())["version"]
+
+
+def release_url(version):
+    return ("https://github.com/bained/blender_cutlist_addon-export_for_maxcut"
+            f"/releases/latest/download/{PACKAGE}-{version}.zip")
 
 
 def local_zip():
@@ -30,11 +42,11 @@ def local_zip():
     return os.path.join(dist, zips[-1]) if zips else None
 
 
-def release_zip():
+def release_zip(version):
     """Download the published asset so the released bytes are what gets tested."""
     folder = tempfile.mkdtemp(prefix="eck_dl_")
-    target = os.path.join(folder, f"export_razkroi_addon-{VERSION}.zip")
-    with urllib.request.urlopen(RELEASE_URL, timeout=60) as response:
+    target = os.path.join(folder, f"{PACKAGE}-{version}.zip")
+    with urllib.request.urlopen(release_url(version), timeout=60) as response:
         payload = response.read()
     with open(target, "wb") as handle:
         handle.write(payload)
@@ -56,12 +68,14 @@ def main():
             pass
 
     use_url = "--url" in sys.argv
-    path = release_zip() if use_url else local_zip()
+    version = addon_version()
+    path = release_zip(version) if use_url else local_zip()
     if path is None:
         raise SystemExit("no zip found - run tools/build_zip.py first")
 
     print("\n=========== RELEASE VERIFICATION ===========")
     print("blender:", bpy.app.version_string)
+    print("expected version:", version)
     print("source:", "GitHub release download" if use_url else "local dist/")
     print("zip:", os.path.basename(path), f"({os.path.getsize(path) / 1024:.1f} KB)")
 
@@ -71,12 +85,12 @@ def main():
     module = importlib.import_module(INSTALLED)
     operators = importlib.import_module(f"{INSTALLED}.operators")
     # 4.2+ strips bl_info from extension modules, so read the manifest.
-    import tomllib
-
     manifest = os.path.join(os.path.dirname(module.__file__), "blender_manifest.toml")
     with open(manifest, encoding="utf-8") as handle:
         data = tomllib.loads(handle.read())
-    print("version:", data["version"], "| blender_min:", data["blender_version_min"])
+    print("installed version:", data["version"],
+          "| match:", data["version"] == version,
+          "| blender_min:", data["blender_version_min"])
     print("panel:", hasattr(bpy.types, "ECK_PT_razkroi"),
           "| list:", hasattr(bpy.types, "ECK_UL_parts"))
     failing = [n for n in ("export_razkroi", "export_razkroi_as", "preview_razkroi",
@@ -89,7 +103,7 @@ def main():
     props = scene.eck_props
     props.only_selected = True
     props.auto_thickness = True
-    props.material_name = "EGGER W1100 ST9"
+    props.material_name = TEST_MATERIAL
 
     for obj in list(bpy.data.objects):
         if obj.type == "MESH":

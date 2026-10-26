@@ -12,6 +12,10 @@ copying dimensions by hand into a spreadsheet.
 "Input Panel";"Shelf";"1164";"540";"1";"";"";"EGGER W1100 ST9"
 ```
 
+> The material name is something *you* type — the add-on ships with no default and
+> knows nothing about any particular board. If you leave the field empty, the file
+> says `Unnamed material` so a forgotten name cannot slip through unnoticed.
+
 ## Features
 
 - **Measures the objects for you** — no typing dimensions. Works with rotated
@@ -127,6 +131,7 @@ on a particular MaxCut version, it only writes this text format.
 | Object with a zero dimension | Skipped, listed under *Skipped* |
 | Sizes outside 8–2800 mm | Warning to check the scene units |
 | Unusual unit scale | Warning in the panel |
+| Material field left empty | The file says `Unnamed material` instead of a blank column |
 | Target file exists and *Overwrite* is off | A `_001`, `_002` suffix is added |
 
 ## Limitations

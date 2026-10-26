@@ -22,6 +22,22 @@ MAX_NAME_CHARS = 120
 # Plausibility ranges for a furniture cutting list, in millimetres
 # (matches the specification pinned by tools/run_tests.py).
 SIDE_RANGE_MM = (8.0, 2800.0)
+# Total board area of one export, in m². A whole kitchen fits comfortably below
+# this; anything above means a unit-scale mistake, not a big project.
+AREA_RANGE_M2 = (0.01, 500.0)
+
+# A side shorter than this is degenerate geometry, not a board. Kept in one place
+# because both the measuring (export_to_mm callers) and the skipping decide with it.
+MIN_SIDE_MM = 1e-4
+
+# First column of every MaxCut line: the part type MaxCut expects for a panel.
+MAXCUT_PART_TYPE = "Input Panel"
+
+# Written when the user has not typed a material. Deliberately generic: the add-on
+# must never ship somebody's real board name as its default (MaxCut shows this
+# string on the sheet, so it has to be recognisable when it slips through).
+FALLBACK_MATERIAL = "Unnamed material"
+
 
 
 @dataclass
@@ -102,7 +118,7 @@ def thickness_outliers(panels, tolerance=0.5, expected=None):
 def measure(panel):
     """Return ``(length, width)`` in mm, the two long sides of the board."""
     a, b, c = (round(float(v), 3) for v in panel.dims_mm)
-    if min(a, b, c) <= 1e-4:
+    if min(a, b, c) <= MIN_SIDE_MM:
         return None, None
     sides = sorted((a, b, c))
     length, width = sides[2], sides[1]
@@ -183,16 +199,20 @@ def build_line(part, delimiter=";"):
 
     Column order matches the script this add-on replaces:
     ``"Input Panel"; name; length; width; qty; edge1; edge2; material``
+
+    An empty material falls back to ``FALLBACK_MATERIAL`` instead of writing an
+    empty field, so a forgotten material is visible on the MaxCut sheet rather
+    than silently imported as a blank.
     """
     fields = (
-        "Input Panel",
+        MAXCUT_PART_TYPE,
         join_names(part.names),
         format_number(part.length),
         format_number(part.width),
         str(part.qty),
         "",  # edge banding, reserved: set manually in MaxCut
         "",
-        part.material,
+        part.material or FALLBACK_MATERIAL,
     )
     return delimiter.join(quote(field) for field in fields)
 
@@ -225,6 +245,6 @@ def plausibility_problems(parts):
             problems.append(f"{label}: {format_number(side_max)} mm is too large, "
                             f"check the scene unit scale")
     area = total_area_m2(parts)
-    if parts and not 0.01 <= area <= 500.0:
+    if parts and not AREA_RANGE_M2[0] <= area <= AREA_RANGE_M2[1]:
         problems.append(f"total area {area:.2f} m² looks wrong")
     return problems

@@ -22,6 +22,7 @@ Environment:
 import importlib
 import inspect
 import os
+import re
 import sys
 import tempfile
 import traceback
@@ -36,7 +37,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 ADDON_DIR = REPO_ROOT / "export_razkroi"
-DEFAULT_MATERIAL = "Алпийско бяло н.W1100 ST9 EGGER"
+# Fixture material used by the tests. Deliberately non-ASCII (Cyrillic) to prove the
+# UTF-8 handling, and deliberately *not* the add-on default: the add-on must not
+# ship any real board name.
+TEST_MATERIAL = "Тестов материал Бяло W1100 ST9"
+DEFAULT_MATERIAL = TEST_MATERIAL  # kept as an alias for the existing cases
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +64,7 @@ class Case:
 
     def near(self, got, expected, tol, message):
         ok = got is not None and abs(got - expected) <= tol
-        return self.check(ok, f"{message}: expected {expected}Ã‚Â±{tol}, got {got!r}")
+        return self.check(ok, f"{message}: expected {expected} ±{tol}, got {got!r}")
 
 
 def run_cases(cases):
@@ -566,6 +571,13 @@ def test_utf8_file_write(case):
 @logic
 def test_output_dir_fallback_order(case):
     """The output folder must never fall back to a temp/render path."""
+    # Read the constant out of the source instead of importing: this layer must
+    # stay runnable without Blender, and properties.py imports bpy.
+    source = (addon_dir() / "properties.py").read_text(encoding="utf-8")
+    match = re.search(r'^FALLBACK_FOLDER\s*=\s*"([^"]+)"', source, re.MULTILINE)
+    if not case.check(match is not None, "FALLBACK_FOLDER is defined in properties.py"):
+        return
+    fallback_folder = match.group(1)
 
     def resolve(output_dir, blend_path, last_dir):
         if output_dir:
@@ -574,16 +586,56 @@ def test_output_dir_fallback_order(case):
             return str(Path(blend_path).parent)
         if last_dir:
             return last_dir
-        return str(Path.home() / "Documents" / "razkroi")
+        return str(Path.home() / "Documents" / fallback_folder)
 
     case.equal(resolve("D:/proj/out", "D:/proj/a.blend", "E:/last"), "D:/proj/out",
                "explicit dir wins")
     case.equal(resolve("", "D:/proj/a.blend", "E:/last"), str(Path("D:/proj")),
                "blend folder next")
     case.equal(resolve("", "", "E:/last"), "E:/last", "prefs.last_dir next")
-    case.check("razkroi" in resolve("", "", ""), "documents fallback")
+    case.check(fallback_folder in resolve("", "", ""), "documents fallback")
     case.check(tempfile.gettempdir().lower() not in resolve("", "", "").lower(),
                "temp dir is never the fallback")
+
+
+@addon
+def test_default_file_name(case):
+    """The unsaved-scene fallback must not repeat the suffix.
+
+    Saved scenes cannot be simulated (``bpy.data.filepath`` is read-only), so this
+    pins the branch that actually had the bug: an unsaved scene produced
+    ``cutlist_cutlist.txt`` because the stem and the suffix both said "cutlist".
+    """
+    load_addon()
+    properties = importlib.import_module(f"{ADDON_ID}.properties")
+    if bpy.data.filepath:
+        case.check(True, "saved scene - fallback branch not reachable, skipped")
+        return
+    name = properties.default_file_name()
+    case.equal(name.count("cutlist"), 1, f"suffix is not doubled (got {name!r})")
+    case.equal(name, properties.FALLBACK_FILE_NAME,
+               "unsaved scene gets the plain fallback name")
+    case.check(properties.FALLBACK_FILE_NAME.endswith(".txt"),
+               "fallback is still a .txt file")
+
+
+@logic
+def test_empty_material_falls_back_visibly(case):
+    """An unfilled material must be obvious in MaxCut, not a blank column.
+
+    This is what replaced the hardcoded default board name: the panel starts empty,
+    and the file says so loudly enough that nobody ships a sheet with no material.
+    """
+    load_addon()
+    exporter = importlib.import_module(f"{ADDON_ID}.exporter")
+    part = exporter.Part(["A"], 600.0, 400.0, "", 1)
+    line = exporter.build_line(part)
+    case.check(exporter.FALLBACK_MATERIAL in line,
+               f"empty material becomes {exporter.FALLBACK_MATERIAL!r}, got {line!r}")
+    case.equal(line.count(";"), 7, "still eight fields")
+    named = exporter.build_line(exporter.Part(["A"], 600.0, 400.0, "Oak H3734", 1))
+    case.check("Oak H3734" in named and exporter.FALLBACK_MATERIAL not in named,
+               "a typed material is used as-is")
 
 
 # ---------------------------------------------------------------------------
@@ -736,7 +788,7 @@ def test_exporter_options_registered(case):
     for field_name in REQUIRED_PROPS:
         case.check(field_name in keys, f"property {field_name!r} present")
     default = getattr(group.bl_rna.properties["material_name"], "default", None)
-    case.equal(default, DEFAULT_MATERIAL, "material default kept from the workflow")
+    case.equal(default, "", "material default is empty - no board name shipped with the add-on")
 
 
 @addon
@@ -859,7 +911,7 @@ def test_unit_summary_and_warnings(case):
         units.system = "METRIC"
         units.length_unit = "MILLIMETERS"
         units.scale_length = 1.0
-        case.equal(props.unit_summary(scene), "Metric · mi · scale 1",
+        case.equal(props.unit_summary(scene), "Metric · mm · scale 1",
                    "summary for the usual mm setup")
         case.equal(props.unit_problems(scene), [], "no warnings for mm + scale 1.0")
 

@@ -12,6 +12,7 @@ from .properties import (
     addon_preferences,
     default_file_name,
     fill_parts,
+    is_plain_metre_scale,
     output_dir,
     scene_scale_length,
     unit_problems,
@@ -19,6 +20,9 @@ from .properties import (
 
 # Runtime report of the last scan, shared by the panel and the operators.
 LAST = {"parts": 0, "area": 0.0, "message": "", "warnings": [], "skipped": []}
+
+# How many _001/_002 variants to look for before giving up on a free file name.
+MAX_COLLISION_TRIES = 1000
 
 
 def iter_objects(scene, only_selected):
@@ -88,7 +92,7 @@ def collect_panels(scene, props):
             continue  # a linked duplicate of an object already in the list
         seen.add(signature)
         dims = measured_dims_mm(obj, scale_length)
-        if min(dims) <= 1e-4:
+        if min(dims) <= exporter.MIN_SIDE_MM:
             skipped.append(obj.name)
             continue
         panels.append(exporter.Panel(obj.name, dims))
@@ -158,7 +162,7 @@ def unique_path(path):
     if not os.path.exists(path):
         return path
     stem, ext = os.path.splitext(path)
-    for index in range(1, 1000):
+    for index in range(1, MAX_COLLISION_TRIES):
         candidate = f"{stem}_{index:03d}{ext}"
         if not os.path.exists(candidate):
             return candidate
@@ -413,7 +417,7 @@ class ECK_OT_scene_to_mm(Operator):
     def execute(self, context):
         before, after = set_scene_to_mm(context.scene)
         note = ""
-        if abs(after[2] - 1.0) > 1e-6:
+        if not is_plain_metre_scale(after[2]):
             note = f" (unit scale {after[2]:g} kept)"
         self.report({"INFO"}, f"{before[0].title()} -> Metric, "
                               f"{before[1].title()} -> Millimeters{note}")

@@ -53,7 +53,7 @@ def main():
 
     props.only_selected = False
     props.auto_thickness = True
-    props.material_name = "EGGER W1100 ST9"
+    props.material_name = "Тестов материал W1100"  # fixture, not a real board name
     scene.unit_settings.scale_length = 1.0
 
     result = {}

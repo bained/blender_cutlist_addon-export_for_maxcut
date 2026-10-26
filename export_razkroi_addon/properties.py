@@ -1,7 +1,6 @@
 """Property groups: per-scene settings that travel with the .blend file."""
 
 import os
-import sys
 
 import bpy
 from bpy.props import (
@@ -17,15 +16,36 @@ from bpy.types import PropertyGroup, UIList
 
 from .exporter import MM_PER_UNIT
 
-DEFAULT_MATERIAL = "Алпийско бяло н.W1100 ST9 EGGER"
 # Any of these is "user works in millimetres", 1.0 is "plain Blender metres".
 KNOWN_SCALE_LENGTHS = (1.0, 0.001)
+# Tolerance for comparing scale_length values (Blender stores a float).
+SCALE_EPSILON = 1e-6
 
 SORT_ITEMS = (
     ("NAME", "Name", "Sort by the first object name"),
     ("LENGTH", "Length", "Longest panels first"),
     ("AREA", "Area", "By row area (L x W x qty)"),
 )
+
+# Output file naming, in one place so the panel text and the code cannot drift.
+FILE_SUFFIX = "_cutlist.txt"
+FALLBACK_FILE_NAME = "cutlist.txt"
+FALLBACK_FOLDER = "cutlist"
+
+# Short labels for the panel header. Keys are the identifiers Blender reports in
+# ``unit_settings.length_unit`` (measured on 5.2.3, see .dev/probe_units_label.py).
+UNIT_LABELS = {
+    "ADAPTIVE": "auto",
+    "METERS": "m",
+    "CENTIMETERS": "cm",
+    "MILLIMETERS": "mm",
+    "MICROMETERS": "µm",
+    "KILOMETERS": "km",
+    "FEET": "ft",
+    "INCHES": "in",
+    "THOU": "thou",
+    "MILES": "mi",
+}
 
 
 class ECK_PartItem(PropertyGroup):
@@ -43,23 +63,33 @@ class ECK_PartItem(PropertyGroup):
 
 
 def default_output_dir():
-    """Folder next to the .blend file, else ~/Documents/razkroi - never a temp dir."""
+    """Folder next to the .blend file, else ~/Documents/cutlist - never a temp dir."""
     blend = bpy.data.filepath
     if blend:
         return os.path.dirname(blend)
-    return os.path.join(os.path.expanduser("~"), "Documents", "razkroi")
+    return os.path.join(os.path.expanduser("~"), "Documents", FALLBACK_FOLDER)
 
 
 def default_file_name():
+    """``<blend name>_cutlist.txt``, or just ``cutlist.txt`` for an unsaved scene."""
     blend = bpy.data.filepath
-    stem = os.path.splitext(os.path.basename(blend))[0] if blend else "razkroi"
-    return f"{stem}_razkroi.txt"
+    stem = os.path.splitext(os.path.basename(blend))[0] if blend else ""
+    return f"{stem}{FILE_SUFFIX}" if stem else FALLBACK_FILE_NAME
 
 
 def scene_scale_length(scene=None):
     """What one Blender unit means for this scene (1.0 = metres)."""
     scene = scene or bpy.context.scene
     return scene.unit_settings.scale_length
+
+
+def is_plain_metre_scale(scale_length):
+    """Is this the default ``1 unit = 1 m`` scale?
+
+    Used whenever the panel or an operator has to tell the user "the scale is
+    untouched" - the comparison lives here so it cannot drift between callers.
+    """
+    return abs(float(scale_length) - 1.0) <= SCALE_EPSILON
 
 
 def scene_uses_millimetres(scene=None):
@@ -108,8 +138,9 @@ class ECK_Properties(PropertyGroup):
 
     material_name: StringProperty(
         name="Material",
-        description="Material name as it must appear in MaxCut (one per export)",
-        default=DEFAULT_MATERIAL,
+        description="Material name as it must appear in MaxCut (one per export). "
+                    "Left empty, the file says 'Unnamed material'",
+        default="",
     )
     auto_thickness: BoolProperty(
         name="Thickness from objects",
@@ -142,7 +173,7 @@ class ECK_Properties(PropertyGroup):
     )
     file_name: StringProperty(
         name="File name",
-        description="Output file name (empty = <blend name>_cutlist.txt)",
+        description=f"Output file name (empty = <blend name>{FILE_SUFFIX})",
         default="",
     )
     overwrite: BoolProperty(
@@ -211,7 +242,7 @@ def output_dir(props=None, scene=None):
     """Resolve the export folder.
 
     Priority: panel field, folder of the .blend, last used folder from the
-    add-on preferences, then ``~/Documents/razkroi``. Never a temp directory and
+    add-on preferences, then ``~/Documents/cutlist``. Never a temp directory and
     never ``scene.render.filepath`` (that one belongs to rendering).
     """
     props = props or (scene or bpy.context.scene).eck_props
@@ -237,11 +268,16 @@ SUPPORTED_LENGTH_UNITS = ("MILLIMETERS", "CENTIMETERS", "METERS")
 
 
 def unit_summary(scene=None):
-    """Compact unit state for the panel header, e.g. ``Metric · mm · scale 1``."""
+    """Compact unit state for the panel header, e.g. ``Metric · mm · scale 1``.
+
+    ``length_unit`` is a dynamic enum, so the identifiers are spelled out rather
+    than sliced: a two-letter abbreviation happens to be correct today, but a new
+    unit would silently produce a wrong label.
+    """
     scene = scene or bpy.context.scene
     units = scene.unit_settings
-    length_unit = units.length_unit.lower()[:2] if units.length_unit else "bu"
-    return f"{units.system.title()} · {length_unit} · scale {units.scale_length:g}"
+    label = UNIT_LABELS.get(units.length_unit, "bu")
+    return f"{units.system.title()} · {label} · scale {units.scale_length:g}"
 
 
 def unit_problems(scene=None):
@@ -251,7 +287,8 @@ def unit_problems(scene=None):
     problems = []
     if units.system != "METRIC":
         problems.append(f"Scene uses {units.system.title()} - MaxCut expects millimetres")
-    if not any(abs(units.scale_length - known) < 1e-6 for known in KNOWN_SCALE_LENGTHS):
+    if not any(abs(units.scale_length - known) < SCALE_EPSILON
+               for known in KNOWN_SCALE_LENGTHS):
         problems.append(f"Unusual unit scale {units.scale_length:g}: "
                         f"1 unit = {units.scale_length * MM_PER_UNIT:g} mm")
     return problems
