@@ -1,0 +1,11 @@
+# Keep line endings consistent across platforms.
+# Python sources are forced to LF: Blender loads them on Windows, macOS and
+# Linux, and a mixed working tree is the usual source of "works on my machine".
+* text=auto
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+
+# Release archives are binary and never committed (see .gitignore)
+*.zip binary
